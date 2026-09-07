@@ -1,0 +1,19 @@
+{
+  "name": "send-email-function",
+  "version": "1.0.0",
+  "description": "Send email function for api",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "prebuild": "npm run clean"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.163",
+    "@types/node": "^26.5.0",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@aws-sdk/client-ses": "^3.1127.0"
+  }
+}

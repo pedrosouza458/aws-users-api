@@ -1,0 +1,11 @@
+# Dependencies and generated files
+node_modules/
+dist/
+.aws-sam/
+
+# AWS Local SAM configs
+samconfig.toml
+
+# Logs and system files
+*.log
+.DS_Store

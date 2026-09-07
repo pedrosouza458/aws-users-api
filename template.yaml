@@ -1,0 +1,146 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  AWS USERS API
+  Serverless REST API built with Node.js, TypeScript, and AWS SAM.
+
+Parameters:
+  SenderEmail:
+    Type: String
+    Description: Verified email address for SES
+
+Globals:
+  Function:
+    Timeout: 5
+    MemorySize: 128
+    Architectures:
+      - x86_64
+
+Resources:
+  # Create user Lambda function
+  CreateUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/create-user/
+      Handler: dist/index.handler
+      Runtime: nodejs22.x
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref MyTable
+          BUCKET_NAME: !Ref ProfilePhotosBucket
+          SNS_TOPIC_ARN: !Ref UserEventsTopic
+      Policies:
+        - DynamoDBWritePolicy:
+            TableName: !Ref MyTable
+        - S3WritePolicy:
+            BucketName: !Ref ProfilePhotosBucket
+        - Statement:
+            Effect: Allow
+            Action: sns:Publish
+            Resource: !Ref UserEventsTopic
+      Events:
+        CreateUserApi:
+          Type: Api
+          Properties:
+            Path: /users
+            Method: post
+
+  # DynamoDB
+  MyTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: "DynamoTable"
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: type
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+        - AttributeName: type
+          KeyType: RANGE  
+      BillingMode: PAY_PER_REQUEST
+
+  # S3
+  ProfilePhotosBucket:
+    Type: AWS::S3::Bucket
+
+  # SNS
+  UserEventsTopic:
+    Type: AWS::SNS::Topic
+
+  # SQS
+  EmailQueue:
+    Type: AWS::SQS::Queue
+
+  # SNS to SQS subscription
+  EmailQueueSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref UserEventsTopic
+      Protocol: sqs
+      Endpoint: !GetAtt EmailQueue.Arn
+
+  SQSQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref EmailQueue
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sns.amazonaws.com
+            Action: SQS:SendMessage
+            Resource: !GetAtt EmailQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref UserEventsTopic
+
+  # Lambda SendEmail
+  SendEmailFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/send-email/
+      Handler: dist/index.handler
+      Runtime: nodejs22.x
+      Environment:
+        Variables:
+          VERIFIED_SENDER_EMAIL: !Ref SenderEmail
+      Policies:
+        - SQSPollerPolicy:
+            QueueName: !GetAtt EmailQueue.QueueName
+        - Statement:
+            Effect: Allow
+            Action:
+              - ses:SendEmail
+              - ses:SendRawEmail
+            Resource: "*"
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt EmailQueue.Arn
+            BatchSize: 5
+
+Outputs:
+  CreateUserApi:
+    Description: "Endpoint for creating users through the API"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/users"
+
+  UsersTableName:
+    Description: "Name of the DynamoDB table used to store users"
+    Value: !Ref MyTable
+
+  ProfilePhotosBucketName:
+    Description: "Name of the S3 bucket used to store profile photos"
+    Value: !Ref ProfilePhotosBucket
+
+  UserEventsTopicArn:
+    Description: "ARN of the SNS topic used for user events"
+    Value: !Ref UserEventsTopic
+
+  EmailQueueUrl:
+    Description: "URL of the SQS queue used for email processing"
+    Value: !Ref EmailQueue
